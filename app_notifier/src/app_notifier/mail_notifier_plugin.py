@@ -9,12 +9,14 @@ from app_notifier.util import count_postfix_queued_mail
 from app_notifier.util import get_notification_json_paths
 from app_notifier.util import load_notification_jsons
 from app_notifier.util import parse_context
+from std_msgs.msg import String
 
 
 class MailNotifierPlugin(AppManagerPlugin):
     def __init__(self):
         super(MailNotifierPlugin, self).__init__()
         self.use_app_start_time = False
+        self.pub_mail_title = {}
 
     def app_manager_start_plugin(self, app, ctx, plugin_args):
         self.start_time = rospy.Time.now()
@@ -27,7 +29,11 @@ class MailNotifierPlugin(AppManagerPlugin):
             timestamp = '{0:%Y/%m/%d (%H:%M:%S)}'.format(
                 datetime.datetime.fromtimestamp(self.start_time.to_sec()))
             mail_title += ': {}'.format(timestamp)
-            rospy.set_param('/email_topic/mail_title', mail_title)
+            self.pub_mail_title[app.name] = rospy.Publisher(
+                "/email_topic/mail_title/{}".format(app.name),
+                String,
+                queue_size=1)
+            pub_mail_title.publish()
 
     def app_manager_stop_plugin(self, app, ctx, plugin_args):
         mail_title = plugin_args['mail_title']
@@ -124,8 +130,10 @@ class MailNotifierPlugin(AppManagerPlugin):
                 'Succeeded to send e-mail: {} -> {}'.format(
                     sender_address, receiver_address))
         ctx['mail_notifier_exit_code'] = exit_code
-        # delete ~mail_title rosparam for next
+        # delete mail_title topic for next
         # It is assumed that this is the last one sent in a series of emails.
-        if rospy.has_param('~mail_title'):
-            rospy.delete_param('~mail_title')
+        try:
+            del self.pub_mail_title[app.name]
+        except KeyError as e:
+            rospy.logerr(e)
         return ctx
